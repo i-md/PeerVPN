@@ -1,0 +1,234 @@
+/***************************************************************************
+ *   Copyright (C) 2012 by Tobias Volk                                     *
+ *   mail@tobiasvolk.de                                                    *
+ *                                                                         *
+ *   This program is free software: you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation, either version 3 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
+ ***************************************************************************/
+
+
+// handle termination signals
+void sighandler(int sig) {
+	g_mainloop = 0;
+}
+
+
+int loadengine(const char *engine_name) {
+	const char **pre_cmds = NULL;
+	const char **post_cmds = NULL;
+	int pre_num = 0;
+	int post_num = 0;
+	ENGINE *e = ENGINE_by_id(engine_name);
+	if(!e) {
+		return 0;
+	}
+	while(pre_num--) {
+		if(!ENGINE_ctrl_cmd_string(e, pre_cmds[0], pre_cmds[1], 0)) {
+			ENGINE_free(e);
+			return 0;
+		}
+		pre_cmds += 2;
+	}
+	if(!ENGINE_init(e)) {
+		ENGINE_free(e);
+		return 0;
+	}
+	ENGINE_free(e);
+	while(post_num--) {
+		if(!ENGINE_ctrl_cmd_string(e, post_cmds[0], post_cmds[1], 0)) {
+			ENGINE_finish(e);
+			return 0;
+		}
+		post_cmds += 2;
+	}
+	ENGINE_set_default(e, ENGINE_METHOD_ALL & ~ENGINE_METHOD_RAND);
+	return 1;
+}
+
+
+// initialization sequence
+void init(struct s_initconfig *initconfig) {
+	int c,i,j,k,l,m;
+	struct s_peeraddr localaddr;
+	char str[256];
+
+	// initialize signal handler
+	g_mainloop = 1;
+	signal(SIGINT, sighandler);
+
+	// initialize uptime counter and random generator
+	g_starttime = time(0);
+	srandom(g_starttime);
+
+	// create data structures
+	memset(&g_saddr,0,sizeof(struct sockaddr_in6));
+	g_saddr.sin6_family = AF_INET6;
+	g_saddrlen = sizeof(struct sockaddr_in6);
+	for(i=0; i<FDID_COUNT; i++) g_fd[i].fd = -1;
+
+	// load initpeers
+	i=0;j=0;k=0;l=0;m=0;
+	*(u_int8_t *)(&g_initpeers[0]) = 0;
+	for(;;) {
+		c = initconfig->initpeers[i];
+		if(m) {
+			if(isWhitespaceChar(c) || c == '\0') {
+				k=i;
+				m=k-j;
+				if(m>0) {
+					if(m > 254) m = 254;
+					*(u_int8_t *)(&g_initpeers[l]) = (m+1);
+					memcpy(&g_initpeers[l+1],&initconfig->initpeers[j],m);
+					g_initpeers[l+1+m] = '\0';
+					l = l+2+m;
+					*(u_int8_t *)(&g_initpeers[l]) = 0;
+				}
+				m=0;
+			}
+			if(c == '\0') break;
+		}
+		else {
+			if(c == '\0') break;
+			if(!isWhitespaceChar(c)) {
+				m=1;
+				j=i;
+			}
+		}
+		i++;
+	}
+
+	// enable console
+	if(initconfig->enableconsole) {
+		g_fd[FDID_CONSOLE].fd = STDIN_FILENO;
+		g_fd[FDID_CONSOLE].events = POLLIN;
+		//g_config.enableconsole = initconfig->enableconsole;
+	}
+	
+	// open udp socket
+	if((g_fd[FDID_SOCKET].fd = openUDPSocket(initconfig->sourceip, initconfig->sourceport, &localaddr)) < 0) throwError("could not open local socket!");
+	g_fd[FDID_SOCKET].events = POLLIN;
+
+	// open tap device
+	if(initconfig->enableeth) {
+		if((g_fd[FDID_TAP].fd = openTapDevice(initconfig->tapname)) < 0) {
+			g_enableeth = 0;
+			throwError("tap device could not be opened!");
+		}
+		else {
+			g_enableeth = 1;
+			g_fd[FDID_TAP].events = POLLIN;
+			if(strlen(initconfig->upcmd) > 0) {
+				// execute shell command
+				if((system(initconfig->upcmd)) < 0) {
+					throwError("upcmd failed!");
+				}
+			}
+		}
+	}
+	else {
+		g_enableeth = 0;
+	}
+	
+	
+	// load OpenSSL engines
+	ENGINE_load_builtin_engines();
+	ENGINE_register_all_complete();
+	i=0;j=0;k=0;l=0;m=0;
+	str[0] = '\0';
+	for(;;) {
+		c = initconfig->engines[i];
+		if(isWhitespaceChar(c) || c == '\0') {
+			m=i-j;
+			if(m>0) {
+				if(m > 254) m = 254;
+				memcpy(str,&initconfig->engines[j],m);
+				str[m] = '\0';
+				l = l+2+m;
+				j = i+1;
+				if(k < 1) {
+					printf("\nloading OpenSSL engines...\n");
+					ENGINE_load_builtin_engines();
+					ENGINE_register_all_complete();
+					k = 1;
+				}
+				printf("   engine \"%s\": ",str);
+				if(loadengine(str)) {
+					printf("ok\n");
+				}
+				else {
+					printf("failed\n");
+				}
+			}
+			m=0;
+		}
+		if(c == '\0') break;
+		i++;
+	}
+
+
+	// initialize p2p core
+	g_p2psec = p2psecCreate();
+	if(!p2psecLoadDefaults(g_p2psec)) throwError("failed to load defaults!");
+	if(!p2psecGeneratePrivkey(g_p2psec, 1024)) throwError("failed to generate private key!");
+	p2psecSetNetname(g_p2psec, initconfig->networkname, strlen(initconfig->networkname));
+	p2psecSetPassword(g_p2psec, initconfig->password, initconfig->password_len);
+	p2psecEnableFragmentation(g_p2psec);
+	if(!p2psecStart(g_p2psec)) throwError("failed to start p2p core!");
+	
+	// initialize mac table
+	if(!mapCreate(&g_mactable, 8192, 6, sizeof(int))) throwError("failed to setup mactable!\n");
+	mapEnableReplaceOld(&g_mactable);
+	if(mapGetKeySize(&g_mactable) != 6) throwError("failed to setup mactable!\n");
+	if(mapGetValueSize(&g_mactable) != sizeof(int)) throwError("failed to setup mactable!\n");
+	
+	// show client & network id
+	printf("\n");
+	byteArrayToString(str, mapGetKeyByID(&g_p2psec->mgt.map, 0), p2psecGetNodeIDSize());
+	printf("Client ID: %s\n", str);
+	byteArrayToString(str, g_p2psec->mgt.netid.id, netid_SIZE);
+	printf("Network ID: %s\n", str);
+	printf("\n");
+
+	// drop privileges
+	dropPrivileges(initconfig->userstr, initconfig->groupstr, initconfig->chrootstr);
+
+	// enter main loop
+	printf("entering main loop...\n");
+	printf("\n");
+	mainLoop();
+	printf("\nmain loop left.\n");
+
+	p2psecStop(g_p2psec);
+	
+	// close tap device
+	if(!(g_fd[FDID_TAP].fd < 0)) {
+		close(g_fd[FDID_TAP].fd);
+		g_fd[FDID_TAP].fd = -1;
+	}
+
+	// close socket
+	if(!(g_fd[FDID_SOCKET].fd < 0)) {
+		close(g_fd[FDID_SOCKET].fd);
+		g_fd[FDID_SOCKET].fd = -1;
+	}
+
+	// close console
+	if(!(g_fd[FDID_CONSOLE].fd < 0)) {
+		close(g_fd[FDID_CONSOLE].fd);
+		g_fd[FDID_CONSOLE].fd = -1;
+	}
+
+	// exit
+	printf("exit.\n");
+}
+

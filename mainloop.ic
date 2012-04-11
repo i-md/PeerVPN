@@ -1,0 +1,103 @@
+/***************************************************************************
+ *   Copyright (C) 2012 by Tobias Volk                                     *
+ *   mail@tobiasvolk.de                                                    *
+ *                                                                         *
+ *   This program is free software: you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation, either version 3 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
+ ***************************************************************************/
+
+
+// the mainloop
+static void mainLoop() {
+	int tnow;
+	unsigned char buf[4096];
+	unsigned char msgbuf[4096];
+	unsigned char *msg;
+	int lastinit = 0;
+	int laststatus = 0;
+	int lastconnectcount = 0;
+	int connectcount = 0;
+	int len;
+	int source_peerid;
+	struct s_peeraddr legacy_peeraddr;
+	unsigned char new_peeraddr[peeraddr_SIZE];
+
+	while(g_mainloop) {
+		tnow = utilGetTime();
+		
+		// wait until some fds become active
+		poll(g_fd,FDID_COUNT,POLLWAIT);
+
+		// check udp socket
+		if(!(g_fd[FDID_SOCKET].fd < 0) && g_fd[FDID_SOCKET].revents) {
+			if((g_fd[FDID_SOCKET].revents & POLLERR) != 0) throwError("socket error!");
+			len = recvPacket(buf,4096,&legacy_peeraddr);
+			new_peeraddr[0] = 24;
+			new_peeraddr[1] = 24;
+			new_peeraddr[2] = 24;
+			new_peeraddr[3] = 24;
+			new_peeraddr[4] = 24;
+			new_peeraddr[5] = 24;
+			memcpy(&new_peeraddr[6], legacy_peeraddr.addr, 18);
+			if(len > 0) {
+				if(p2psecInputPacket(g_p2psec, buf, len, new_peeraddr)) {
+					msg = p2psecRecvMSGFromPeerID(g_p2psec, &source_peerid, &len);
+					if(msg != NULL && len > 12 && g_enableeth > 0) {
+						mactableAddMAC(source_peerid, &msg[6]);
+						if(!((write(g_fd[FDID_TAP].fd,msg,len)) > 0)) {
+							logWarning("could not write to tap device!");
+						}
+					}
+				}
+			}
+		}
+
+		// check for ethernet frames on tap device
+		if((g_enableeth > 0) && (!(g_fd[FDID_TAP].fd < 0) && g_fd[FDID_TAP].revents)) {
+			if((g_fd[FDID_TAP].revents & POLLERR) != 0) throwError("tap device error!");
+			len = read(g_fd[FDID_TAP].fd,msgbuf,4096);
+			if(len > 12) {
+				decodeFrame(msgbuf, len);
+			}
+		}
+		
+		// output packets
+		while((len = (p2psecOutputPacket(g_p2psec, buf, 4096, new_peeraddr))) > 0) {
+			memcpy(legacy_peeraddr.addr, &new_peeraddr[6], 18);
+			sendPacket(buf, len, &legacy_peeraddr);
+		}
+
+		// check console
+		if(!(g_fd[FDID_CONSOLE].fd < 0) && g_fd[FDID_CONSOLE].revents) {
+			if((g_fd[FDID_CONSOLE].revents & POLLERR) != 0) throwError("console error!");
+			decodeConsole();
+		}
+
+		// show status
+		if((tnow - laststatus) > 10) {
+			laststatus = tnow;
+			connectcount = mapGetKeyCount(&g_p2psec->mgt.map);
+			if(lastconnectcount != connectcount) {
+				printf("[%d] %d peers connected.\n", tnow, (connectcount - 1));
+				lastconnectcount = connectcount;
+			}
+		}
+
+		// connect initpeers
+		if(((tnow - lastinit) > 30) && (!(mapGetKeyCount(&g_p2psec->mgt.map) > 1))) {
+			lastinit = tnow;
+			connectInitpeers();
+		}		
+	}
+}
+

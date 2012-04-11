@@ -1,0 +1,223 @@
+/***************************************************************************
+ *   Copyright (C) 2012 by Tobias Volk                                     *
+ *   mail@tobiasvolk.de                                                    *
+ *                                                                         *
+ *   This program is free software: you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation, either version 3 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
+ ***************************************************************************/
+
+
+// sets peeraddr from sockaddr
+static void setPeerAddrFromSockAddr(struct s_peeraddr *peer, struct sockaddr_in6 *addr) {
+	memset(peer->addr, 0, peeraddr_SIZE);
+	memcpy(&peer->addr[PEERADDR_IP_START],&addr->sin6_addr.s6_addr[0],PEERADDR_IP_LENGTH);
+	memcpy(&peer->addr[PEERADDR_PORT_START],&addr->sin6_port,PEERADDR_PORT_LENGTH);
+}
+
+
+// sets peeraddr from ipv4 sockaddr
+static void setPeerAddrFromSockAddrV4(struct s_peeraddr *peer, struct sockaddr_in *addr) {
+	memset(peer->addr, 0, peeraddr_SIZE);
+	memcpy(&peer->addr[PEERADDR_IP_START],&g_v4addr.addr[0],PEERADDR_IP_LENGTH);	
+	memcpy(&peer->addr[PEERADDR_IPV4_START],(u_int8_t *)&addr->sin_addr.s_addr,PEERADDR_IPV4_LENGTH);
+	memcpy(&peer->addr[PEERADDR_PORT_START],&addr->sin_port,PEERADDR_PORT_LENGTH);
+}
+
+
+// sets sockaddr from peeraddr
+static void setSockAddrFromPeerAddr(struct sockaddr_in6 *addr, struct s_peeraddr *peer) {
+	memcpy(&addr->sin6_addr.s6_addr[0],&peer->addr[PEERADDR_IP_START],PEERADDR_IP_LENGTH);
+	memcpy(&addr->sin6_port,&peer->addr[PEERADDR_PORT_START],PEERADDR_PORT_LENGTH);
+}
+
+
+// sets peeraddr from an addrinfo structure
+static int setPeerAddrByAddrinfo(struct s_peeraddr *peer, struct addrinfo *addrinfo) {
+	struct sockaddr_in6 *v6addr;
+	struct sockaddr_in *v4addr;
+	if(addrinfo != NULL) {
+		if(addrinfo->ai_family == AF_INET6) {
+			v6addr = (struct sockaddr_in6 *)addrinfo->ai_addr;
+			setPeerAddrFromSockAddr(peer,v6addr);
+			return 1;
+		}
+		if(addrinfo->ai_family == AF_INET) {
+			v4addr = (struct sockaddr_in *)addrinfo->ai_addr;
+			setPeerAddrFromSockAddrV4(peer,v4addr);
+			return 1;
+		}
+		return 0;
+	}
+	else {
+		return 0;
+	}
+}
+
+// sets peeraddr from hostname & port
+static int setPeerAddrByName(struct s_peeraddr *peer, char *hostname, char *port) {
+	int ret;
+	struct addrinfo *d = NULL;
+	struct addrinfo hints;
+	if(hostname != NULL && port != NULL) {
+		memset(&hints,0,sizeof(struct addrinfo));
+		hints.ai_family = AF_INET6;
+		hints.ai_socktype = SOCK_DGRAM;
+		hints.ai_flags = AI_V4MAPPED;
+		if(getaddrinfo(hostname, port, &hints, &d) == 0) {
+			ret = setPeerAddrByAddrinfo(peer,d);	
+			freeaddrinfo(d);
+		}
+		else {
+			ret = 0;
+		}
+		if(ret) {
+			return ret;
+		}
+		else {
+			// some systems dont return v4 mapped addresses, so try real v4 mode here
+			memset(&hints,0,sizeof(struct addrinfo));
+			hints.ai_family = AF_INET;
+			hints.ai_socktype = SOCK_DGRAM;
+			if(getaddrinfo(hostname, port, &hints, &d) == 0) {
+				ret = setPeerAddrByAddrinfo(peer,d);
+				freeaddrinfo(d);
+			}
+			else {
+				ret = 0;
+			}
+			return ret;
+		}
+	}
+	else {
+		return 0;
+	}
+}
+
+
+// sends a packet
+static int sendPacket(unsigned char *buf, int len, struct s_peeraddr *peer) {
+	setSockAddrFromPeerAddr(&g_saddr, peer);
+	return sendto(g_fd[FDID_SOCKET].fd, buf, len, 0, (struct sockaddr *)&g_saddr, g_saddrlen);
+}
+
+
+// receives a packet
+static int recvPacket(unsigned char *buf, int len, struct s_peeraddr *peer) {
+	struct sockaddr_in6 addr;
+	unsigned int addrlen = g_saddrlen;
+	int res = recvfrom(g_fd[FDID_SOCKET].fd, buf, len, 0, (struct sockaddr *)&addr, &addrlen);
+	if(res > 0) setPeerAddrFromSockAddr(peer,&addr);
+	return res;
+}
+
+
+// opens an udp socket and return its file descriptor
+static int openUDPSocket(char *bindaddress, char *bindport, struct s_peeraddr *localaddr) {
+	int ret;
+	int fd;
+	char *zeroport = "0";
+	char *useport;
+	char *useaddr;
+	struct addrinfo *d = NULL;
+	struct addrinfo *di;
+	struct addrinfo hints;
+	memset(&hints,0,sizeof(struct addrinfo));
+	hints.ai_family = AF_INET6;
+	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_flags = AI_V4MAPPED | AI_PASSIVE;
+	if(bindaddress == NULL) {
+		useaddr = NULL;
+	}
+	else {
+		if(strlen(bindaddress) > 0) {
+			useaddr = bindaddress;
+		}
+		else {
+			useaddr = NULL;
+		}
+	}
+	if(bindport == NULL) {
+		useport = zeroport;
+	}
+	else {
+		useport = bindport;
+	}
+	if(getaddrinfo(useaddr, useport, &hints, &d) == 0) {
+		if((fd = socket(PF_INET6, SOCK_DGRAM, 0)) < 0) return -1;
+		if((fcntl(fd,F_SETFL,O_NONBLOCK)) < 0) return -1;
+		ret = -1;
+		di = d;
+		while(di != NULL) {
+			if(bind(fd, di->ai_addr, di->ai_addrlen) == 0) {
+				ret = fd;
+				if(localaddr != NULL) setPeerAddrFromSockAddr(localaddr,(struct sockaddr_in6 *)di->ai_addr);
+				break;
+			}
+			di = di->ai_next;
+		}
+		freeaddrinfo(d);
+		if(ret < 0) {
+			close(fd);
+			return -1;
+		}
+		return ret;
+	}
+	else {
+		return -1;
+	}
+}
+
+
+
+static void connectInitpeers() {
+	int i,j,k;
+	char *hostname = NULL;
+	char *port = NULL;
+	struct s_peeraddr addr;
+	unsigned char new_peeraddr[peeraddr_SIZE];
+	i=0;j=0;k=0;
+	for(;;) {
+		j = *(u_int8_t *)(&g_initpeers[i]);
+		if((j > 0) && (i+j+1 < INITPEER_STORAGE)) {
+			if(k) {
+				port = &g_initpeers[i+1];
+				printf("[%d] resolving %s:%s...\n",utilGetTime(),hostname,port);
+				if(setPeerAddrByName(&addr,hostname,port)) {
+					new_peeraddr[0] = 24;
+					new_peeraddr[1] = 24;
+					new_peeraddr[2] = 24;
+					new_peeraddr[3] = 24;
+					new_peeraddr[4] = 24;
+					new_peeraddr[5] = 24;
+					memcpy(&new_peeraddr[6], addr.addr, 18);
+					p2psecConnect(g_p2psec,new_peeraddr);
+					printf("             done.\n");
+				}
+				else {
+					printf("             failed.\n");
+				}
+				k=0;
+			}
+			else {
+				hostname = &g_initpeers[i+1];
+				k=1;
+			}
+			i=i+j+1;
+		}
+		else {
+			break;
+		}
+	}
+}
+
+

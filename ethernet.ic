@@ -1,0 +1,56 @@
+/***************************************************************************
+ *   Copyright (C) 2012 by Tobias Volk                                     *
+ *   mail@tobiasvolk.de                                                    *
+ *                                                                         *
+ *   This program is free software: you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation, either version 3 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
+ ***************************************************************************/
+
+
+// get peerid from mac address
+static int mactableGetPeer(unsigned char *macaddr) {
+	int pos = mapGetKeyID(&g_mactable,macaddr);
+	if(pos < 0) {
+		return -1;
+	}
+	else {
+		return *((int *)mapGetValueByID(&g_mactable,pos));
+	}
+}
+
+
+// add mac address to mac lookup table
+static void mactableAddMAC(int peerid, unsigned char *macaddr) {
+	if((macaddr[0] & 0x01) == 0) { // only insert unicast frames into mactable
+		mapSet(&g_mactable,macaddr,&peerid);
+	}
+}
+
+
+// decode ethernet frame
+static void decodeFrame(unsigned char *framebuf, const int framebuf_len) {
+	unsigned char *mac;
+	int peerid;
+	if(framebuf_len > 12) {
+		mac = (unsigned char *)&framebuf[0];
+		peerid = mactableGetPeer(mac);
+		if(peermgtIsActiveRemoteID(&g_p2psec->mgt, peerid)) {
+			// send frame to destination peer
+			p2psecSendMSGToPeerID(g_p2psec, peerid, framebuf, framebuf_len);
+		}
+		else {
+			// send broadcast
+			p2psecSendBroadcastMSG(g_p2psec, framebuf, framebuf_len);
+		}
+	}
+}

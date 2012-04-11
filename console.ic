@@ -1,0 +1,85 @@
+/***************************************************************************
+ *   Copyright (C) 2012 by Tobias Volk                                     *
+ *   mail@tobiasvolk.de                                                    *
+ *                                                                         *
+ *   This program is free software: you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation, either version 3 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
+ ***************************************************************************/
+
+
+
+// print table of active peers
+static void printActivePeerTable() {
+	char str[8192];
+	p2psecStatus(g_p2psec, str, 8192);
+	printf("%s\n", str);
+}
+
+
+// parse command
+static void parseCMD(char *cmd, int cmdlen) {
+	char text[4096];
+	unsigned char new_peeraddr[peeraddr_SIZE];
+	if(cmd[0] == 'A' || cmd[0] == 'a') {
+		// ACTIVEPEERTABLE
+		printActivePeerTable();
+	}
+	if(cmd[0] == 'I' || cmd[0] == 'i') {
+		// INSERTPEER
+		char pa[1024];
+		char pb[1024];
+		char pc[1024];
+		pa[0] = '\0';
+		pb[0] = '\0';
+		pc[0] = '\0';
+		struct s_peeraddr paddr;
+		sscanf(cmd,"%s %s %s",pa,pb,pc);
+		if(setPeerAddrByName(&paddr,pb,pc)) {
+			new_peeraddr[0] = 24;
+			new_peeraddr[1] = 24;
+			new_peeraddr[2] = 24;
+			new_peeraddr[3] = 24;
+			new_peeraddr[4] = 24;
+			new_peeraddr[5] = 24;
+			memcpy(&new_peeraddr[6], paddr.addr, 18);
+			if(p2psecConnect(g_p2psec, new_peeraddr)) {
+				utilByteArrayToHexstring(text, 4096, new_peeraddr, peeraddr_SIZE);
+				printf("connecting to %s...\n", text);
+			}
+			/*
+			if(connectNewPeer(NULL,&paddr,1,0,0,0)) {
+				printf("new connection created.\n");
+			}
+			else {
+				printf("could not create new connection.\n");
+			}
+			*/
+		}
+		else {
+			printf("could not get peer address.\n");
+		}
+		
+	}
+	if(cmd[0] == 'P' || cmd[0] == 'p') {
+		// PEERDB
+		printActivePeerTable();
+	}
+}
+
+
+// decode console command
+static void decodeConsole() {
+	char cmd[COMMAND_BUFSIZE] = {0,0};
+	int len = read(g_fd[FDID_CONSOLE].fd, cmd, COMMAND_BUFSIZE);
+	if(len > 0) parseCMD(cmd,len);
+}
