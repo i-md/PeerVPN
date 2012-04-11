@@ -34,7 +34,7 @@ static void mainLoop() {
 
 	while(g_mainloop) {
 		tnow = utilGetTime();
-		
+
 		// wait until some fds become active
 		poll(g_fd,FDID_COUNT,POLLWAIT);
 
@@ -70,7 +70,7 @@ static void mainLoop() {
 				decodeFrame(msgbuf, len);
 			}
 		}
-		
+
 		// output packets
 		while((len = (p2psecOutputPacket(g_p2psec, buf, 4096, new_peeraddr))) > 0) {
 			memcpy(legacy_peeraddr.addr, &new_peeraddr[6], 18);
@@ -97,7 +97,9 @@ static void mainLoop() {
 		if(((tnow - lastinit) > 30) && (!(mapGetKeyCount(&g_p2psec->mgt.map) > 1))) {
 			lastinit = tnow;
 			connectInitpeers();
-		}		
+		}
+
+		fflush(stdout);
 	}
 }
 
