@@ -88,7 +88,17 @@ static void mainLoop() {
 			laststatus = tnow;
 			connectcount = mapGetKeyCount(&g_p2psec->mgt.map);
 			if(lastconnectcount != connectcount) {
-				printf("[%d] %d peers connected.\n", tnow, (connectcount - 1));
+				char buffer[256];
+				time_t timestamp = tnow;
+				strftime(buffer, 255, "%F %T %z", localtime(&timestamp));
+				printf("[%s] %d peers connected.\n", buffer, (connectcount - 1));
+				int i = 1;
+				char str[256];
+				while (i < connectcount) {
+					byteArrayToString(str, mapGetKeyByID(&g_p2psec->mgt.map, i), p2psecGetNodeIDSize());
+					printf("%s\n", str);
+					i++;
+				};
 				lastconnectcount = connectcount;
 			}
 		}
