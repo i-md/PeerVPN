@@ -92,13 +92,25 @@ static void mainLoop() {
 				time_t timestamp = tnow;
 				strftime(buffer, 255, "%F %T %z", localtime(&timestamp));
 				printf("[%s] %d peers connected.\n", buffer, (connectcount - 1));
-				int i = 1;
-				char str[256];
+				int i = 0;
+				char str1[256];
+				char str2[256];
 				while (i < connectcount) {
-					byteArrayToString(str, mapGetKeyByID(&g_p2psec->mgt.map, i), p2psecGetNodeIDSize());
-					printf("%s\n", str);
+					if (i == 0) {
+						printf("me - ");
+					} else {
+						printf("   - ");
+					}
+
+					setSockAddrFromPeerAddr(&g_saddr, g_p2psec->mgt.remoteaddr[i].addr + 6);
+					inet_ntop(AF_INET6,((struct sockaddr_in6 *)(&g_saddr))->sin6_addr.s6_addr, str1, g_saddrlen);
+
+					byteArrayToString(str2, mapGetKeyByID(&g_p2psec->mgt.map, i), p2psecGetNodeIDSize());
+					printf("%25s %s\n", str1, str2);
 					i++;
 				};
+				printf("\n");
+				fflush(stdout);
 				lastconnectcount = connectcount;
 			}
 		}
@@ -108,8 +120,6 @@ static void mainLoop() {
 			lastinit = tnow;
 			connectInitpeers();
 		}
-
-		fflush(stdout);
 	}
 }
 
