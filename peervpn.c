@@ -31,6 +31,7 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <openssl/engine.h>
+#include <openssl/md5.h>
 
 
 #include "libp2psec/p2psec.c"
@@ -86,7 +87,7 @@ int main(int argc, char **argv) {
 
 		// start vpn node
 		init(&config);
-		break;		
+		break;
 	default:
 		printf("usage: %s <path_to_config_file>\n", argv[0]);
 		exit(0);
