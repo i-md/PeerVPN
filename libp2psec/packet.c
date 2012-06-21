@@ -28,8 +28,8 @@
 
 // size of packet header fields in bytes
 #define packet_PEERID_SIZE 4 // peer ID
-#define packet_HMAC_SIZE 20 // hmac that includes sequence number, node ID, pl* fields (pllen, pltype, plopt) and payload
-#define packet_IV_SIZE 8 // IV
+#define packet_HMAC_SIZE 32 // hmac that includes sequence number, node ID, pl* fields (pllen, pltype, plopt) and payload
+#define packet_IV_SIZE 16 // IV
 #define packet_SEQ_SIZE seq_SIZE // packet sequence number
 #define packet_PLLEN_SIZE 2 // payload length
 #define packet_PLTYPE_SIZE 1 // payload type

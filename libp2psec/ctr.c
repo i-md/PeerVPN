@@ -17,45 +17,85 @@
  ***************************************************************************/
 
 
+#ifndef F_CTR_C
+#define F_CTR_C
 
-// print table of active peers
-static void printActivePeerTable() {
-	char str[8192];
-	p2psecStatus(g_p2psec, str, 8192);
-	printf("%s\n", str);
+
+#include "util.c"
+
+
+// Number of seconds for averaging.
+#define ctr_SECS 16
+
+
+// The sequence number state structure.
+struct s_ctr_state {
+	int total;
+	int cur;
+	int last[ctr_SECS + 16];
+	int lasttime;
+	int lastpos;
+};
+
+
+// Clear counters.
+static void ctrClear(struct s_ctr_state *ctr) {
+	int i;
+	ctr->total = 0;
+	ctr->cur = 0;
+	for(i=0; i<ctr_SECS; i++) {
+		ctr->last[i] = 0;
+	}
+}
+
+
+// Initialize sequence number state.
+static void ctrInit(struct s_ctr_state *ctr) {
+	ctrClear(ctr);
+	ctr->lasttime = utilGetTime();
+	ctr->lastpos = 0;
 }
 
 
-// parse command
-static void decodeConsole(char *cmd, int cmdlen) {
-	char text[4096];
-	unsigned char new_peeraddr[peeraddr_SIZE];
-	if(cmd[0] == 'A' || cmd[0] == 'a') {
-		// ACTIVEPEERTABLE
-		printActivePeerTable();
+// Increment counter.
+static void ctrIncr(struct s_ctr_state *ctr, const int inc) {
+	int diff;
+	int lasttime = ctr->lasttime;
+	int tnow = utilGetTime();
+	
+	diff = (tnow - lasttime);
+	if(diff > ctr_SECS) {
+		ctrClear(ctr);
 	}
-	if(cmd[0] == 'I' || cmd[0] == 'i') {
-		// INSERTPEER
-		char pa[1024];
-		char pb[1024];
-		char pc[1024];
-		pa[0] = '\0';
-		pb[0] = '\0';
-		pc[0] = '\0';
-		sscanf(cmd,"%s %s %s",pa,pb,pc);
-		if(ioGetUDPAddress(&iostate, new_peeraddr, pb, pc)) {
-			if(p2psecConnect(g_p2psec, new_peeraddr)) {
-				utilByteArrayToHexstring(text, 4096, new_peeraddr, peeraddr_SIZE);
-				printf("connecting to %s...\n", text);
-			}
+	else {
+		while(diff > 1) {
+			ctr->last[ctr->lastpos] = 0;
+			ctr->lastpos = ((ctr->lastpos + 1) % ctr_SECS);
+			diff--;
 		}
-		else {
-			printf("could not get peer address.\n");
+		if(diff > 0) {
+			ctr->last[ctr->lastpos] = ctr->cur;
+			ctr->lastpos = ((ctr->lastpos + 1) % ctr_SECS);
+			ctr->cur = 0;
+			diff--;
 		}
-		
 	}
-	if(cmd[0] == 'P' || cmd[0] == 'p') {
-		// PEERDB
-		printActivePeerTable();
-	}
+	
+	ctr->cur = (ctr->cur + inc);
+	ctr->total = (ctr->total + inc);
+	ctr->lasttime = tnow;
 }
+
+
+static int ctrAvg(struct s_ctr_state *ctr) {
+	int i = 0;
+	int sum = 0;
+	while(i < ctr_SECS) {
+		sum = sum + ctr->last[i];
+		i++;
+	}
+	return(sum / ctr_SECS);
+}
+
+
+#endif // F_CTR_C

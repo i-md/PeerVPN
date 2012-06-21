@@ -24,7 +24,7 @@
 #include "rsa.c"
 
 
-// NodeID size in bytes (160 bit for SHA-1).
+// NodeID size in bytes.
 #define nodeid_SIZE 32
 
 

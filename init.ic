@@ -23,6 +23,7 @@ void sighandler(int sig) {
 }
 
 
+// load named OpenSSL engine
 int loadengine(const char *engine_name) {
 	const char **pre_cmds = NULL;
 	const char **post_cmds = NULL;
@@ -59,26 +60,19 @@ int loadengine(const char *engine_name) {
 // initialization sequence
 void init(struct s_initconfig *initconfig) {
 	int c,i,j,k,l,m;
-	struct s_peeraddr localaddr;
 	char str[256];
+	char tapname[256];
 
 	// initialize signal handler
 	g_mainloop = 1;
 	signal(SIGINT, sighandler);
 
-	// initialize uptime counter and random generator
-	g_starttime = time(0);
-	srandom(g_starttime);
-
 	// create data structures
-	memset(&g_saddr,0,sizeof(struct sockaddr_in6));
-	g_saddr.sin6_family = AF_INET6;
-	g_saddrlen = sizeof(struct sockaddr_in6);
-	for(i=0; i<FDID_COUNT; i++) g_fd[i].fd = -1;
+	ioCreate(&iostate);
 
 	// load initpeers
 	i=0;j=0;k=0;l=0;m=0;
-	*(u_int8_t *)(&g_initpeers[0]) = 0;
+	g_initpeers[0] = 0;
 	for(;;) {
 		c = initconfig->initpeers[i];
 		if(m) {
@@ -87,11 +81,11 @@ void init(struct s_initconfig *initconfig) {
 				m=k-j;
 				if(m>0) {
 					if(m > 254) m = 254;
-					*(u_int8_t *)(&g_initpeers[l]) = (m+1);
+					g_initpeers[l] = (m+1);
 					memcpy(&g_initpeers[l+1],&initconfig->initpeers[j],m);
 					g_initpeers[l+1+m] = '\0';
 					l = l+2+m;
-					*(u_int8_t *)(&g_initpeers[l]) = 0;
+					g_initpeers[l] = 0;
 				}
 				m=0;
 			}
@@ -106,34 +100,77 @@ void init(struct s_initconfig *initconfig) {
 		}
 		i++;
 	}
+	
+	printf("\n");
 
 	// enable console
 	if(initconfig->enableconsole) {
-		g_fd[FDID_CONSOLE].fd = STDIN_FILENO;
-		g_fd[FDID_CONSOLE].events = POLLIN;
-		//g_config.enableconsole = initconfig->enableconsole;
+		if(ioOpenSTDIN(&iostate)) {
+			g_enableconsole = 1;
+		}
+		else {
+			throwError("could not initialize console!");
+		}
+	}
+	else {
+		g_enableconsole = 0;
 	}
 	
-	// open udp socket
-	if((g_fd[FDID_SOCKET].fd = openUDPSocket(initconfig->sourceip, initconfig->sourceport, &localaddr)) < 0) throwError("could not open local socket!");
-	g_fd[FDID_SOCKET].events = POLLIN;
+	// open udp sockets
+	i = 0;
+	printf("opening sockets...\n");
+	if(initconfig->enableipv4) {
+		if(ioOpenUDPv4Socket(&iostate, initconfig->sourceip, initconfig->sourceport)) {
+			printf("   IPv4/UDP: ok.\n");
+			i++;
+		}
+		else {
+			printf("   IPv4/UDP: failed.\n");
+		}
+	}
+	if(initconfig->enableipv6) {
+		if(ioOpenUDPv6Socket(&iostate, initconfig->sourceip, initconfig->sourceport)) {
+			printf("   IPv6/UDP: ok.\n");
+			i++;
+		}
+		else {
+			printf("   IPv6/UDP: failed.\n");
+		}
+	}
+	if(i < 1) {
+		throwError("could not open any sockets!");
+	}
 
 	// open tap device
 	if(initconfig->enableeth) {
-		if((g_fd[FDID_TAP].fd = openTapDevice(initconfig->tapname)) < 0) {
+		printf("opening TAP device...\n");
+		if(!ioOpenTap(&iostate, tapname, initconfig->tapname)) {
 			g_enableeth = 0;
 			throwError("tap device could not be opened!");
 		}
 		else {
 			g_enableeth = 1;
-			g_fd[FDID_TAP].events = POLLIN;
+			printf("   device \"%s\": ok.\n", tapname);
+			if(strlen(initconfig->ifconfig4) > 0) {
+				// configure IPv4 address
+				if(!(ifconfig4(tapname, strlen(tapname), initconfig->ifconfig4, strlen(initconfig->ifconfig4)))) {
+					logWarning("could not automatically configure IPv4 address!");
+				}
+			}
+			if(strlen(initconfig->ifconfig6) > 0) {
+				// configure IPv6 address
+				if(!(ifconfig6(tapname, strlen(tapname), initconfig->ifconfig6, strlen(initconfig->ifconfig6)))) {
+					logWarning("could not automatically configure IPv6 address!");
+				}
+			}
 			if(strlen(initconfig->upcmd) > 0) {
 				// execute shell command
-				if((system(initconfig->upcmd)) < 0) {
-					throwError("upcmd failed!");
+				if((ifconfigExec(initconfig->upcmd)) < 0) {
+					logWarning("upcmd failed!");
 				}
 			}
 		}
+		printf("   done.\n");
 	}
 	else {
 		g_enableeth = 0;
@@ -156,7 +193,7 @@ void init(struct s_initconfig *initconfig) {
 				l = l+2+m;
 				j = i+1;
 				if(k < 1) {
-					printf("\nloading OpenSSL engines...\n");
+					printf("loading OpenSSL engines...\n");
 					ENGINE_load_builtin_engines();
 					ENGINE_register_all_complete();
 					k = 1;
@@ -177,13 +214,21 @@ void init(struct s_initconfig *initconfig) {
 
 
 	// initialize p2p core
+	printf("preparing P2P engine...\n");
 	g_p2psec = p2psecCreate();
 	if(!p2psecLoadDefaults(g_p2psec)) throwError("failed to load defaults!");
 	if(!p2psecGeneratePrivkey(g_p2psec, 1024)) throwError("failed to generate private key!");
 	p2psecSetNetname(g_p2psec, initconfig->networkname, strlen(initconfig->networkname));
 	p2psecSetPassword(g_p2psec, initconfig->password, initconfig->password_len);
 	p2psecEnableFragmentation(g_p2psec);
+	if(g_enableeth > 0) {
+		p2psecEnableUserdata(g_p2psec);
+	}
+	else {
+		p2psecDisableUserdata(g_p2psec);
+	}
 	if(!p2psecStart(g_p2psec)) throwError("failed to start p2p core!");
+	printf("   done.\n");
 	
 	// initialize mac table
 	if(!mapCreate(&g_mactable, 8192, 6, sizeof(int))) throwError("failed to setup mactable!\n");
@@ -194,13 +239,16 @@ void init(struct s_initconfig *initconfig) {
 	// show client & network id
 	printf("\n");
 	byteArrayToString(str, mapGetKeyByID(&g_p2psec->mgt.map, 0), p2psecGetNodeIDSize());
-	printf("Client ID: %s\n", str);
+	printf("Client ID:  %s\n", str);
 	byteArrayToString(str, g_p2psec->mgt.netid.id, netid_SIZE);
 	printf("Network ID: %s\n", str);
 	printf("\n");
 
 	// drop privileges
 	dropPrivileges(initconfig->userstr, initconfig->groupstr, initconfig->chrootstr);
+	if(initconfig->enableprivdrop) {
+		dropPrivilegesAuto();
+	}
 
 	// enter main loop
 	printf("entering main loop...\n");
@@ -208,25 +256,10 @@ void init(struct s_initconfig *initconfig) {
 	mainLoop();
 	printf("\nmain loop left.\n");
 
+	// shut down
+	mapDestroy(&g_mactable);
 	p2psecStop(g_p2psec);
-	
-	// close tap device
-	if(!(g_fd[FDID_TAP].fd < 0)) {
-		close(g_fd[FDID_TAP].fd);
-		g_fd[FDID_TAP].fd = -1;
-	}
-
-	// close socket
-	if(!(g_fd[FDID_SOCKET].fd < 0)) {
-		close(g_fd[FDID_SOCKET].fd);
-		g_fd[FDID_SOCKET].fd = -1;
-	}
-
-	// close console
-	if(!(g_fd[FDID_CONSOLE].fd < 0)) {
-		close(g_fd[FDID_CONSOLE].fd);
-		g_fd[FDID_CONSOLE].fd = -1;
-	}
+	ioReset(&iostate);
 
 	// exit
 	printf("exit.\n");

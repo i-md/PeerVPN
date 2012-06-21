@@ -23,6 +23,7 @@
 
 #include "console.c"
 #include "p2psec.c"
+#include "ctr.c"
 #include "peermgt_test.c"
 #include "authmgt_test.c"
 #include "mapstr_test.c"
@@ -652,6 +653,7 @@ void consoleTestsuiteAuthtestZ(struct s_console *console, struct s_auth_state *u
 	struct s_nodeid nid_local = {{0}};
 	struct s_nodeid nid_remote = {{0}};
 	int pid;
+	
 	char text[2048];
 	
 	if(authIsCompleted(user_a)) {
@@ -680,12 +682,6 @@ void consoleTestsuiteAuthtestZ(struct s_console *console, struct s_auth_state *u
 		authGetRemoteNodeID(user_a, &nid_remote);
 		utilByteArrayToHexstring(text, 2048, nid_remote.id, nodeid_SIZE);
 		consoleMsg(console, text); consoleNL(console);
-		/*
-		consoleMsg(console, "  keygen_nonce  = ");
-		utilByteArrayToHexstring(text, 2048, user_a->keygen_nonce, (auth_NONCESIZE + auth_NONCESIZE));
-		consoleMsg(console, text); consoleNL(console);
-		*/
-		
 	}
 	else {
 		consoleMsg(console, "authentication failed!");
@@ -740,10 +736,10 @@ void consoleTestsuiteAuthtestX(struct s_console *console, struct s_auth_state *u
 	consoleTestsuiteAuthtestY(console, user_a, user_b,  1);
 	consoleTestsuiteAuthtestY(console, user_a, user_b, -1);
 	consoleMsg(console, "  send data of user a"); consoleNL(console);
-	authSetLocalData(user_a, 7, 2305);
+	authSetLocalData(user_a, 7, 2305, 999);
 	consoleTestsuiteAuthtestY(console, user_a, user_b,  1);
 	consoleMsg(console, "  send data of user b"); consoleNL(console);
-	authSetLocalData(user_b, 13, 1337);
+	authSetLocalData(user_b, 13, 1337, 777);
 	consoleTestsuiteAuthtestY(console, user_a, user_b, -1);
 	consoleTestsuiteAuthtestY(console, user_a, user_b,  1);
 	consoleTestsuiteAuthtestY(console, user_a, user_b, -1);
@@ -854,6 +850,25 @@ void consoleTestsuiteEndian(struct s_console_args *args) {
 }
 
 
+void consoleTestsuiteCtrInc(struct s_console_args *args) {
+	struct s_console *console = args->arg[0];
+	struct s_ctr_state *ctr = args->arg[1];
+	ctrIncr(ctr, 1);
+	consoleNL(console);
+}
+
+
+void consoleTestsuiteCtrShow(struct s_console_args *args) {
+	struct s_console *console = args->arg[0];
+	struct s_ctr_state *ctr = args->arg[1];
+	char text[256];
+	ctrIncr(ctr, 0);
+	snprintf(text, 256, "[total: %d] [avg: %d] [cur: %d] [last: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d] [pos: %d]\n", ctr->total, ctrAvg(ctr), ctr->cur, ctr->last[0], ctr->last[1], ctr->last[2], ctr->last[3], ctr->last[4], ctr->last[5], ctr->last[6], ctr->last[7], ctr->last[8], ctr->last[9], ctr->last[10], ctr->last[11], ctr->last[12], ctr->last[13], ctr->last[14], ctr->last[15], ctr->lastpos);
+	consoleMsg(console, text);
+	consoleNL(console);
+}
+
+
 int consoleTestsuite() {
 	const int cl_bufsize = 4096;
 	const int rw_bufsize = 16;
@@ -861,9 +876,12 @@ int consoleTestsuite() {
 	struct s_console console;
 	struct s_map testmap;
 	struct s_seq_state seqstate;
+	struct s_ctr_state testctr;
 	char buf[rw_bufsize];
 	int run = 1;
 	int len;
+
+	ctrInit(&testctr);
 
 	mapCreate(&testmap, 32, teststr_size, teststr_size);
 	mapEnableReplaceOld(&testmap);
@@ -901,6 +919,8 @@ int consoleTestsuite() {
 	consoleRegisterCommand(&console, "dfragtest", &consoleTestsuiteDfragTestsuite, consoleArgs0());
 	consoleRegisterCommand(&console, "textgen", &consoleTestsuiteTextgen, consoleArgs3(&console, NULL, NULL));
 	consoleRegisterCommand(&console, "endian", &consoleTestsuiteEndian, consoleArgs1(&console));
+	consoleRegisterCommand(&console, "ctrinc", &consoleTestsuiteCtrInc, consoleArgs2(&console, &testctr));
+	consoleRegisterCommand(&console, "ctrshow", &consoleTestsuiteCtrShow, consoleArgs2(&console, &testctr));
 	
 	while(run) {
 		while((len = consoleRead(&console, buf, rw_bufsize)) > 0) {

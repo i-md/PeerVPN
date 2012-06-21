@@ -29,15 +29,11 @@
 
 
 // supported crypto algorithms
-#define crypto_NULL 0
-#define crypto_AES128 1
-#define crypto_AES256 2
+#define crypto_AES256 1
 
 
 // supported hmac algorithms
-#define crypto_MD5 0
-#define crypto_SHA1 1
-#define crypto_SHA256 2
+#define crypto_SHA256 1
 
 
 // maximum iv size
@@ -227,14 +223,10 @@ static int cryptoSetSessionKeys(struct s_crypto *session_ctx, struct s_crypto *c
 	
 	// select algorithms
 	switch(cipher_algorithm) {
-		case crypto_NULL: st_cipher = cryptoGetEVPCipher(EVP_enc_null()); break;
-		case crypto_AES128: st_cipher = cryptoGetEVPCipher(EVP_aes_128_cbc()); break;
 		case crypto_AES256: st_cipher = cryptoGetEVPCipher(EVP_aes_256_cbc()); break;
 		default: return 0;
 	}
 	switch(hmac_algorithm) {
-		case crypto_MD5: st_md = cryptoGetEVPMD(EVP_md5()); break;
-		case crypto_SHA1: st_md = cryptoGetEVPMD(EVP_sha1()); break;
 		case crypto_SHA256: st_md = cryptoGetEVPMD(EVP_sha256()); break;
 		default: return 0;
 	}
@@ -324,12 +316,6 @@ static int cryptoCalculateHash(unsigned char *hash_buf, const int hash_len, cons
 	if(len < hash_len) return 0;
 	memcpy(hash_buf, hash, hash_len);
 	return 1;
-}
-
-
-// calculate MD5 hash
-static int cryptoCalculateMD5(unsigned char *hash_buf, const int hash_len, const unsigned char *in_buf, const int in_len) {
-	return cryptoCalculateHash(hash_buf, hash_len, in_buf, in_len, EVP_md5());
 }
 
 

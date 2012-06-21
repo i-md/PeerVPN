@@ -19,32 +19,12 @@
 
 // version information
 #define PEERVPN_VERSION_MAJOR 0
-#define PEERVPN_VERSION_MINOR 20
+#define PEERVPN_VERSION_MINOR 23
 
 
 // compile time options & timing parameters
 #define INITPEER_STORAGE 1024
-#define CLIENTID_LENGTH 16
-#define COMMAND_BUFSIZE 1024
-#define POLLWAIT 100
-
-
-// file descriptor positions
-#define FDID_CONSOLE 0
-#define FDID_SOCKET 1
-#define FDID_TAP 2
-#define FDID_COUNT 3
-
-
-// peer address positions & lenghts
-#define PEERADDR_START 0
-#define PEERADDR_LENGTH 18
-#define PEERADDR_IP_START 0
-#define PEERADDR_IP_LENGTH 16
-#define PEERADDR_IPV4_START 12
-#define PEERADDR_IPV4_LENGTH 4
-#define PEERADDR_PORT_START 16
-#define PEERADDR_PORT_LENGTH 2
+#define POLLWAIT 1000
 
 
 // config parser options
@@ -52,25 +32,7 @@
 #define CONFPARSER_NAMEBUF_SIZE 512
 
 
-// constraints
-#if PEERADDR_IP_LENGTH < 16
-#error
-#endif
-#if PEERADDR_PORT_LENGTH < 2
-#error
-#endif
-#if PEERCOUNT_HARDLIMIT > 254
-#error
-#endif
-#if PEERCOUNT_SOFTLIMIT > PEERCOUNT_HARDLIMIT
-#error
-#endif
-
-
 // structures
-struct s_clientid {
-	u_int8_t id[CLIENTID_LENGTH];
-};
 struct s_initconfig {
 	char sourceip[CONFPARSER_NAMEBUF_SIZE+1];
 	char sourceport[CONFPARSER_NAMEBUF_SIZE+1];
@@ -79,6 +41,8 @@ struct s_initconfig {
 	char groupstr[CONFPARSER_NAMEBUF_SIZE+1];
 	char chrootstr[CONFPARSER_NAMEBUF_SIZE+1];
 	char networkname[CONFPARSER_NAMEBUF_SIZE+1];
+	char ifconfig4[CONFPARSER_NAMEBUF_SIZE+1];
+	char ifconfig6[CONFPARSER_NAMEBUF_SIZE+1];
 	char upcmd[CONFPARSER_NAMEBUF_SIZE+1];
 	char initpeers[CONFPARSER_NAMEBUF_SIZE+1];
 	char engines[CONFPARSER_NAMEBUF_SIZE+1];
@@ -87,23 +51,19 @@ struct s_initconfig {
 	int enableindirect;
 	int enablerelay;
 	int enableeth;
+	int enableipv4;
+	int enableipv6;
+	int enableprivdrop;
 	int enableconsole;
 };
 
 
-// global constants
-const struct s_peeraddr g_zeroaddr = { .addr = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}};
-const struct s_peeraddr g_v4addr = { .addr = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xFF,0xFF,0x00,0x00,0x00,0x00,0x00,0x00}};
-
-
 // global variables
+struct s_io_state iostate;
 P2PSEC_CTX *g_p2psec;
-long g_starttime;
-struct sockaddr_in6 g_saddr;
-struct pollfd g_fd[FDID_COUNT];
 int g_mainloop;
-int g_saddrlen;
 char g_initpeers[INITPEER_STORAGE+1];
 struct s_map g_mactable;
+int g_enableconsole;
 int g_enableeth;
 int g_enableengines;

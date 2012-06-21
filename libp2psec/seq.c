@@ -29,7 +29,7 @@
 
 
 // Window size.
-#define seq_WINDOWSIZE 1024
+#define seq_WINDOWSIZE 16384
 
 
 // The sequence number state structure.

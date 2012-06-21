@@ -37,6 +37,7 @@ P2PSEC_CTX {
 	int loopback_enable;
 	int fastauth_enable;
 	int fragmentation_enable;
+	int flags;
 	char password[1024];
 	int password_len;
 	char netname[1024];
@@ -52,6 +53,7 @@ int p2psecStart(P2PSEC_CTX *p2psec) {
 			peermgtSetFragmentation(&p2psec->mgt, p2psec->fragmentation_enable);
 			peermgtSetNetID(&p2psec->mgt, p2psec->netname, p2psec->netname_len);
 			peermgtSetPassword(&p2psec->mgt, p2psec->password, p2psec->password_len);
+			peermgtSetFlags(&p2psec->mgt, p2psec->flags);
 			p2psec->started = 1;
 			return 1;
 		}
@@ -207,13 +209,38 @@ void p2psecDisableFragmentation(P2PSEC_CTX *p2psec) {
 }
 
 
+void p2psecSetFlag(P2PSEC_CTX *p2psec, const int flag, const int enable) {
+	int f;
+	if(enable) {
+		f = (p2psec->flags | flag);
+	}
+	else {
+		f = (p2psec->flags & (~flag));
+	}
+	p2psec->flags = f;
+	if(p2psec->started) peermgtSetFlags(&p2psec->mgt, f);
+}
+
+
+void p2psecEnableUserdata(P2PSEC_CTX *p2psec) {
+	p2psecSetFlag(p2psec, peermgt_FLAG_USERDATA, 1);
+}
+
+
+void p2psecDisableUserdata(P2PSEC_CTX *p2psec) {
+	p2psecSetFlag(p2psec, peermgt_FLAG_USERDATA, 0);
+}
+
+
 int p2psecLoadDefaults(P2PSEC_CTX *p2psec) {
 	if(!p2psecLoadDH(p2psec)) return 0;
+	p2psecSetFlag(p2psec, (~(0)), 0);
 	p2psecSetMaxConnectedPeers(p2psec, 512);
 	p2psecSetAuthSlotCount(p2psec, 16);
 	p2psecDisableLoopback(p2psec);
 	p2psecEnableFastauth(p2psec);
 	p2psecDisableFragmentation(p2psec);
+	p2psecEnableUserdata(p2psec);
 	p2psecSetNetname(p2psec, NULL, 0);
 	p2psecSetPassword(p2psec, NULL, 0);
 	return 1;
@@ -227,6 +254,7 @@ P2PSEC_CTX *p2psecCreate() {
 		p2psec->started = 0;
 		p2psec->key_loaded = 0;
 		p2psec->dh_loaded = 0;
+		p2psec->flags = 0;
 		p2psecLoadDefaults(p2psec);
 		return p2psec;
 	}
