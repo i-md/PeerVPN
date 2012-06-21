@@ -122,9 +122,9 @@ static int authmgtGetAuthedPeerNodeID(struct s_authmgt *mgt, struct s_nodeid *no
 
 
 // Accept the current authed peer.
-static void authmgtAcceptAuthedPeer(struct s_authmgt *mgt, const int local_peerid, const int64_t seq) {
+static void authmgtAcceptAuthedPeer(struct s_authmgt *mgt, const int local_peerid, const int64_t seq, const int64_t flags) {
 	if(authmgtHasAuthedPeer(mgt)) {
-		authSetLocalData(&mgt->authstate[mgt->current_authed_id], local_peerid, seq);
+		authSetLocalData(&mgt->authstate[mgt->current_authed_id], local_peerid, seq, flags);
 		mgt->current_authed_id = -1;
 	}
 }
@@ -194,9 +194,9 @@ static int authmgtGetCompletedPeerSessionKeys(struct s_authmgt *mgt, struct s_cr
 
 
 // Get the connection parameters of the current completed peer.
-static int authmgtGetCompletedPeerConnectionParams(struct s_authmgt *mgt, int64_t *remoteseq) {
+static int authmgtGetCompletedPeerConnectionParams(struct s_authmgt *mgt, int64_t *remoteseq, int64_t *remoteflags) {
 	if(authmgtHasCompletedPeer(mgt)) {
-		return authGetConnectionParams(&mgt->authstate[mgt->current_completed_id], remoteseq);
+		return authGetConnectionParams(&mgt->authstate[mgt->current_completed_id], remoteseq, remoteflags);
 	}
 	else {
 		return 0;

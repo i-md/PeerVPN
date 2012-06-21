@@ -30,6 +30,8 @@
 
 
 #define peermgtTestsuite_NODECOUNT authmgtTestsuite_NODECOUNT
+#define peermgtTestsuite_PEERSLOTS (peermgtTestsuite_NODECOUNT * 4)
+#define peermgtTestsuite_AUTHSLOTS (peermgtTestsuite_NODECOUNT / 4)
 
 #if peermgtTestsuite_NODECOUNT < 4
 #error not enough nodes!
@@ -146,6 +148,10 @@ static int peermgtTestsuiteRun(struct s_peermgt_test *teststate) {
 				peermgtSetFragmentation(&teststate->peermgts[3], 1);
 				peermgtSetNetID(&teststate->peermgts[3], "testnet", 7);
 				break;
+			case 103:
+				// reconnect node 3
+				peermgtTestsuiteGetAddr(&addr, 0);
+				peermgtConnect(&teststate->peermgts[3], &addr);
 			default:
 				break;
 		}
@@ -200,7 +206,7 @@ static int peermgtTestsuitePrepare(struct s_peermgt_test *teststate) {
 	if(authmgtTestsuiteCreateNodes(&teststate->authtest)) {
 		count = 0;
 		while(count < peermgtTestsuite_NODECOUNT) {
-			if(!peermgtCreate(&teststate->peermgts[count], (peermgtTestsuite_NODECOUNT * 4), (peermgtTestsuite_NODECOUNT / 2), &teststate->authtest.nk[count], &teststate->authtest.dhstate[count])) break;
+			if(!peermgtCreate(&teststate->peermgts[count], peermgtTestsuite_PEERSLOTS, peermgtTestsuite_AUTHSLOTS, &teststate->authtest.nk[count], &teststate->authtest.dhstate[count])) break;
 			peermgtSetFastauth(&teststate->peermgts[count], 1);
 			peermgtSetLoopback(&teststate->peermgts[count], 0);
 			peermgtSetFragmentation(&teststate->peermgts[count], 1);

@@ -19,26 +19,15 @@
 
 #include <signal.h>
 #include <stdio.h>
-#include <string.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <poll.h>
-#include <time.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <pwd.h>
-#include <grp.h>
-#include <net/if.h>
-#include <sys/ioctl.h>
 #include <openssl/engine.h>
 #include <openssl/md5.h>
 
 
 #include "libp2psec/p2psec.c"
+#include "platform/io.c"
+#include "platform/ifconfig.c"
 #include "globals.ic"
 #include "helpers.ic"
-#include "socket.ic"
-#include "tap.ic"
 #include "console.ic"
 #include "ethernet.ic"
 #include "mainloop.ic"
@@ -54,6 +43,8 @@ int main(int argc, char **argv) {
 
 	// default configuration
 	strcpy(config.tapname,"");
+	strcpy(config.ifconfig4,"");
+	strcpy(config.ifconfig6,"");
 	strcpy(config.upcmd,"");
 	strcpy(config.sourceip,"");
 	strcpy(config.sourceport,"");
@@ -68,6 +59,9 @@ int main(int argc, char **argv) {
 	config.enablerelay = 0;
 	config.enableindirect = 0;
 	config.enableconsole = 0;
+	config.enableprivdrop = 1;
+	config.enableipv4 = 1;
+	config.enableipv6 = 1;
 
 	printf("PeerVPN v%d.%03d\n", PEERVPN_VERSION_MAJOR, PEERVPN_VERSION_MINOR);
 	printf("(c)2012 Tobias Volk <mail@tobiasvolk.de>\n");

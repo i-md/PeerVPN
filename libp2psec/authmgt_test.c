@@ -88,7 +88,7 @@ static int authmgtTestsuiteRun(struct s_authmgt_test *teststate) {
 							authmgtRejectAuthedPeer(&teststate->mgt[j]);
 						}
 						else {
-							authmgtAcceptAuthedPeer(&teststate->mgt[j], 23, 1337);
+							authmgtAcceptAuthedPeer(&teststate->mgt[j], 23, 1337, 0);
 						}
 					}
 					if(authmgtGetCompletedPeerNodeID(&teststate->mgt[j], &nodeid)) {

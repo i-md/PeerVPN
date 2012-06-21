@@ -49,13 +49,13 @@
 
 
 // Size of identity protection IV and HMAC
-#define auth_IDPHMACSIZE 4
-#define auth_IDPIVSIZE 8
+#define auth_IDPHMACSIZE auth_HMACSIZE
+#define auth_IDPIVSIZE 16
 
 
 // Size of CNEG IV and HMAC
 #define auth_CNEGHMACSIZE auth_HMACSIZE
-#define auth_CNEGIVSIZE 8
+#define auth_CNEGIVSIZE 16
 
 
 // Size of nonces.
@@ -66,7 +66,7 @@
 #define auth_MAXMSGSIZE_S0 (4 + 2 + 8 + 4 + 4 + netid_SIZE)
 #define auth_MAXMSGSIZE_S1 (4 + 2 + 8 + 4 + auth_NONCESIZE + 2 + dh_MAXSIZE)
 #define auth_MAXMSGSIZE_S2 (4 + 2 + 2 + nodekey_MAXSIZE + 2 + nodekey_MAXSIZE + auth_HMACSIZE + auth_IDPIVSIZE + auth_IDPHMACSIZE + crypto_MAXIVSIZE)
-#define auth_MAXMSGSIZE_S3 (4 + 2 + auth_NONCESIZE + seq_SIZE + 4 + auth_CNEGIVSIZE + auth_CNEGHMACSIZE + crypto_MAXIVSIZE)
+#define auth_MAXMSGSIZE_S3 (4 + 2 + auth_NONCESIZE + seq_SIZE + 4 + 8 + auth_CNEGIVSIZE + auth_CNEGHMACSIZE + crypto_MAXIVSIZE)
 #define auth_MAXMSGSIZE_S4 (4 + 2 + auth_NONCESIZE + auth_CNEGHMACSIZE)
 
 
@@ -118,6 +118,8 @@ struct s_auth_state {
 	int local_cneg_set;
 	unsigned char local_authid[4];
 	unsigned char remote_authid[4];
+	unsigned char local_flags[8];
+	unsigned char remote_flags[8];
 	unsigned char local_seq[seq_SIZE];
 	unsigned char remote_seq[seq_SIZE];
 	unsigned char s4msg_nonce[auth_NONCESIZE];
@@ -179,7 +181,7 @@ static void authGenS0(struct s_auth_state *authstate) {
 	memcpy(&authstate->nextmsg[(4 + 2 + 8)], &authstate->local_authid, 4);
 	memcpy(&authstate->nextmsg[(4 + 2 + 8 + 4)], &authstate->local_sesstoken, 4);
 	memcpy(&authstate->nextmsg[(4 + 2 + 8 + 4 + 4)], authstate->netid->id, netid_SIZE);
-	if(cryptoCalculateMD5(&authstate->nextmsg[(4 + 2)], 8, &authstate->nextmsg[(4 + 2 + 8)], (4 + 4 + netid_SIZE))) {
+	if(cryptoCalculateSHA256(&authstate->nextmsg[(4 + 2)], 8, &authstate->nextmsg[(4 + 2 + 8)], (4 + 4 + netid_SIZE))) {
 		authstate->nextmsg_size = (4 + 2 + 8 + 4 + 4 + netid_SIZE);
 	}
 	else {
@@ -195,7 +197,7 @@ static int authDecodeS0(struct s_auth_state *authstate, const unsigned char *msg
 	if(msg_len >= (4 + 2 + 8 + 4 + 4 + netid_SIZE)) {
 		msgnum = utilReadInt16(&msg[4]);
 		if(msgnum == (authstate->state + 1)) {
-			if(cryptoCalculateMD5(checksum, 8, &msg[(4 + 2 + 8)], (4 + 4 + netid_SIZE))) {
+			if(cryptoCalculateSHA256(checksum, 8, &msg[(4 + 2 + 8)], (4 + 4 + netid_SIZE))) {
 				if(memcmp(checksum, &msg[(4 + 2)], 8) == 0) {
 					if(memcmp(authstate->netid->id, &msg[(4 + 2 + 8 + 4 + 4)], netid_SIZE) == 0) {
 						memcpy(authstate->remote_authid, &msg[(4 + 2 + 8)], 4);
@@ -222,7 +224,7 @@ static void authGenS1(struct s_auth_state *authstate) {
 	dhsize = dhGetPubkey(&authstate->nextmsg[(4 + 2 + 8 + 4 + auth_NONCESIZE + 2)], dh_MAXSIZE, authstate->dhstate);
 	if(dhsize > dh_MINSIZE) {
 		utilWriteInt16(&authstate->nextmsg[(4 + 2 + 8 + 4 + auth_NONCESIZE)], dhsize);
-		if(cryptoCalculateMD5(&authstate->nextmsg[(4 + 2)], 8, &authstate->nextmsg[(4 + 2 + 8)], (4 + auth_NONCESIZE + 2 + dhsize))) {
+		if(cryptoCalculateSHA256(&authstate->nextmsg[(4 + 2)], 8, &authstate->nextmsg[(4 + 2 + 8)], (4 + auth_NONCESIZE + 2 + dhsize))) {
 			authstate->nextmsg_size = (4 + 2 + 8 + 4 + auth_NONCESIZE + 2 + dhsize);
 		}
 		else {
@@ -247,7 +249,7 @@ static int authDecodeS1(struct s_auth_state *authstate, const unsigned char *msg
 			if(memcmp(authstate->local_sesstoken, &msg[(4 + 2 + 8)], 4) == 0) {
 				dhsize = utilReadInt16(&msg[(4 + 2 + 8 + 4 + auth_NONCESIZE)]);
 				if((dhsize > dh_MINSIZE) && (msg_len >= (4 + 2 + 8 + 4 + auth_NONCESIZE + 2 + dhsize))) {
-					if(cryptoCalculateMD5(checksum, 8, &msg[(4 + 2 + 8)], (4 + auth_NONCESIZE + 2 + dhsize))) {
+					if(cryptoCalculateSHA256(checksum, 8, &msg[(4 + 2 + 8)], (4 + auth_NONCESIZE + 2 + dhsize))) {
 						if(memcmp(checksum, &msg[(4 + 2)], 8) == 0) {
 							authstate->remote_dhkey_size = dhsize;
 							memcpy(authstate->remote_dhkey, &msg[(4 + 2 + 8 + 4 + auth_NONCESIZE + 2)], dhsize);
@@ -367,9 +369,9 @@ static int authDecodeS2(struct s_auth_state *authstate, const unsigned char *msg
 
 // Generate auth message S3
 static void authGenS3(struct s_auth_state *authstate) {
-	// generate msg(remote_authid, msgnum, enc(keygen_nonce, local_seq, local_peerid))
+	// generate msg(remote_authid, msgnum, enc(keygen_nonce, local_seq, local_peerid, local_flags))
 	unsigned char unencrypted_nextmsg[auth_MAXMSGSIZE_S3];
-	int unencrypted_nextmsg_size = (4 + 2 + auth_NONCESIZE + seq_SIZE + 4);
+	int unencrypted_nextmsg_size = (4 + 2 + auth_NONCESIZE + seq_SIZE + 4 + 8);
 	int msgnum = authstate->state;
 	int encsize;
 	if(authstate->local_cneg_set) {
@@ -379,6 +381,7 @@ static void authGenS3(struct s_auth_state *authstate) {
 		memcpy(&unencrypted_nextmsg[(4 + 2)], authstate->local_keygen_nonce, auth_NONCESIZE);
 		memcpy(&unencrypted_nextmsg[(4 + 2 + auth_NONCESIZE)], authstate->local_seq, seq_SIZE);
 		utilWriteInt32(&unencrypted_nextmsg[(4 + 2 + auth_NONCESIZE + seq_SIZE)], authstate->local_peerid);
+		memcpy(&unencrypted_nextmsg[(4 + 2 + auth_NONCESIZE + seq_SIZE + 4)], authstate->local_flags, 8);
 		encsize = cryptoEnc(&authstate->crypto_ctx[auth_CRYPTOCTX_CNEG], &authstate->nextmsg[(4 + 2)], (auth_MAXMSGSIZE - 2 - 4), &unencrypted_nextmsg[(4 + 2)], (unencrypted_nextmsg_size - 2 - 4), auth_CNEGHMACSIZE, auth_CNEGIVSIZE);
 		if(encsize > 0) {
 			authstate->nextmsg_size = (encsize + 4 + 2);
@@ -403,7 +406,7 @@ static int authDecodeS3(struct s_auth_state *authstate, const unsigned char *msg
 		msgnum = utilReadInt16(&decmsg[4]);
 		if(msgnum == (authstate->state + 1)) {
 			decmsg_len = (4 + 2 + cryptoDec(&authstate->crypto_ctx[auth_CRYPTOCTX_CNEG], &decmsg[(4 + 2)], (auth_MAXMSGSIZE_S3 - 2 - 4), &msg[(4 + 2)], (msg_len - 2 - 4), auth_CNEGHMACSIZE, auth_CNEGIVSIZE));
-			if(decmsg_len >= (4 + 2 + auth_NONCESIZE + seq_SIZE + 4)) {
+			if(decmsg_len >= (4 + 2 + auth_NONCESIZE + seq_SIZE + 4 + 8)) {
 				memcpy(authstate->remote_keygen_nonce, &decmsg[(4 + 2)], auth_NONCESIZE);
 				if((msgnum % 2) == 0) {
 					memcpy(&authstate->keygen_nonce[0], authstate->local_keygen_nonce, auth_NONCESIZE);
@@ -415,6 +418,7 @@ static int authDecodeS3(struct s_auth_state *authstate, const unsigned char *msg
 				}
 				memcpy(authstate->remote_seq, &decmsg[(4 + 2 + auth_NONCESIZE)], seq_SIZE);
 				authstate->remote_peerid = utilReadInt32(&decmsg[(4 + 2 + auth_NONCESIZE + seq_SIZE)]);
+				memcpy(authstate->remote_flags, &decmsg[(4 + 2 + auth_NONCESIZE + seq_SIZE + 4)], 8);
 				return 1;
 			}
 		}
@@ -522,6 +526,8 @@ static void authReset(struct s_auth_state *authstate) {
 	authstate->state = auth_IDLE;
 	memset(authstate->local_seq, 0, seq_SIZE);
 	memset(authstate->remote_seq, 0, seq_SIZE);
+	memset(authstate->local_flags, 0, seq_SIZE);
+	memset(authstate->remote_flags, 0, seq_SIZE);
 	memset(authstate->local_keygen_nonce, 0, auth_NONCESIZE);
 	memset(authstate->remote_keygen_nonce, 0, auth_NONCESIZE);
 	memset(authstate->keygen_nonce, 0, auth_NONCESIZE + auth_NONCESIZE);
@@ -623,7 +629,7 @@ static int authGetRemotePeerID(struct s_auth_state *authstate, int *remote_peeri
 // Get shared session keys. Returns 1 if successful.
 static int authGetSessionKeys(struct s_auth_state *authstate, struct s_crypto *ctx) {
 	if(authIsCompleted(authstate)) {
-		return cryptoSetSessionKeys(ctx, &authstate->crypto_ctx[auth_CRYPTOCTX_SESSION_A], &authstate->crypto_ctx[auth_CRYPTOCTX_SESSION_B], authstate->keygen_nonce, (auth_NONCESIZE + auth_NONCESIZE), crypto_AES256, crypto_SHA1);
+		return cryptoSetSessionKeys(ctx, &authstate->crypto_ctx[auth_CRYPTOCTX_SESSION_A], &authstate->crypto_ctx[auth_CRYPTOCTX_SESSION_B], authstate->keygen_nonce, (auth_NONCESIZE + auth_NONCESIZE), crypto_AES256, crypto_SHA256);
 	}
 	else {
 		return 0;
@@ -632,9 +638,10 @@ static int authGetSessionKeys(struct s_auth_state *authstate, struct s_crypto *c
 
 
 // Get connection parameters. Returns 1 if successful.
-static int authGetConnectionParams(struct s_auth_state *authstate, int64_t *seq) {
+static int authGetConnectionParams(struct s_auth_state *authstate, int64_t *seq, int64_t *flags) {
 	if(authIsCompleted(authstate)) {
 		*seq = utilReadInt64(authstate->remote_seq);
+		*flags = utilReadInt64(authstate->remote_flags);
 		return 1;
 	}
 	else {
@@ -657,11 +664,12 @@ static int authGetNextMsg(struct s_auth_state *authstate, struct s_msg *out_msg)
 
 
 // Set local PeerID and sequence number (required to complete auth protocol)
-static void authSetLocalData(struct s_auth_state *authstate, const int peerid, const int64_t seq) {
+static void authSetLocalData(struct s_auth_state *authstate, const int peerid, const int64_t seq, const int64_t flags) {
 	authstate->local_peerid = peerid;
 	cryptoRand(authstate->local_keygen_nonce, auth_NONCESIZE);
 	cryptoRand(authstate->s4msg_nonce, auth_NONCESIZE);
 	utilWriteInt64(authstate->local_seq, seq);
+	utilWriteInt64(authstate->local_flags, flags);
 	authstate->local_cneg_set = 1;
 	authGenMsg(authstate);
 }

@@ -22,6 +22,7 @@ static void mainLoop() {
 	int tnow;
 	unsigned char buf[4096];
 	unsigned char msgbuf[4096];
+	unsigned char cmdbuf[1024];
 	unsigned char *msg;
 	int lastinit = 0;
 	int laststatus = 0;
@@ -30,58 +31,37 @@ static void mainLoop() {
 	unsigned char lasthash[MD5_DIGEST_LENGTH];
 	int len;
 	int source_peerid;
-	struct s_peeraddr legacy_peeraddr;
 	unsigned char new_peeraddr[peeraddr_SIZE];
 
 	while(g_mainloop) {
 		tnow = utilGetTime();
 
 		// wait until some fds become active
-		poll(g_fd,FDID_COUNT,POLLWAIT);
+		ioWait(&iostate, POLLWAIT);
 
-		// check udp socket
-		if(!(g_fd[FDID_SOCKET].fd < 0) && g_fd[FDID_SOCKET].revents) {
-			if((g_fd[FDID_SOCKET].revents & POLLERR) != 0) throwError("socket error!");
-			len = recvPacket(buf,4096,&legacy_peeraddr);
-			new_peeraddr[0] = 24;
-			new_peeraddr[1] = 24;
-			new_peeraddr[2] = 24;
-			new_peeraddr[3] = 24;
-			new_peeraddr[4] = 24;
-			new_peeraddr[5] = 24;
-			memcpy(&new_peeraddr[6], legacy_peeraddr.addr, 18);
-			if(len > 0) {
-				if(p2psecInputPacket(g_p2psec, buf, len, new_peeraddr)) {
-					msg = p2psecRecvMSGFromPeerID(g_p2psec, &source_peerid, &len);
-					if(msg != NULL && len > 12 && g_enableeth > 0) {
-						mactableAddMAC(source_peerid, &msg[6]);
-						if(!((write(g_fd[FDID_TAP].fd,msg,len)) > 0)) {
-							logWarning("could not write to tap device!");
-						}
+		// check udp sockets
+		while((len = (ioRecvPacket(&iostate, buf, 4096, new_peeraddr))) > 0) {
+			if(p2psecInputPacket(g_p2psec, buf, len, new_peeraddr)) {
+				msg = p2psecRecvMSGFromPeerID(g_p2psec, &source_peerid, &len);
+				if(msg != NULL && len > 12 && g_enableeth > 0) {
+					mactableAddMAC(source_peerid, &msg[6]);
+					if(!((ioWriteTap(&iostate, msg, len) > 0))) {
+						logWarning("could not write to tap device!");
 					}
 				}
 			}
 		}
 
 		// check for ethernet frames on tap device
-		if((g_enableeth > 0) && (!(g_fd[FDID_TAP].fd < 0) && g_fd[FDID_TAP].revents)) {
-			if((g_fd[FDID_TAP].revents & POLLERR) != 0) throwError("tap device error!");
-			len = read(g_fd[FDID_TAP].fd,msgbuf,4096);
-			if(len > 12) {
+		if(g_enableeth > 0) {
+			if((len = (ioReadTap(&iostate, msgbuf, 4096))) > 0) {
 				decodeFrame(msgbuf, len);
 			}
 		}
 
 		// output packets
 		while((len = (p2psecOutputPacket(g_p2psec, buf, 4096, new_peeraddr))) > 0) {
-			memcpy(legacy_peeraddr.addr, &new_peeraddr[6], 18);
-			sendPacket(buf, len, &legacy_peeraddr);
-		}
-
-		// check console
-		if(!(g_fd[FDID_CONSOLE].fd < 0) && g_fd[FDID_CONSOLE].revents) {
-			if((g_fd[FDID_CONSOLE].revents & POLLERR) != 0) throwError("console error!");
-			decodeConsole();
+			ioSendPacket(&iostate, buf, len, new_peeraddr);
 		}
 
 		// show status
@@ -142,6 +122,14 @@ static void mainLoop() {
 		if(((tnow - lastinit) > 30) && (!(mapGetKeyCount(&g_p2psec->mgt.map) > 1))) {
 			lastinit = tnow;
 			connectInitpeers();
+		}
+
+		// check console
+		if(g_enableconsole > 0) {
+			len = ioReadSTDIN(&iostate, cmdbuf, 1024);
+			if(len > 0) {
+				decodeConsole((char *)cmdbuf, len);
+			}
 		}
 	}
 }

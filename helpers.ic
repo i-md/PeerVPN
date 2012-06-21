@@ -18,7 +18,7 @@
 
 
 // converts a big endian byte array to a hexstring (size of *out must be 2*len+1)
-static void byteArrayToString(char *out, u_int8_t *in, int len) {
+static void byteArrayToString(char *out, unsigned char *in, int len) {
 	int i;
 	out[0] = '\0';
 	for(i=0; i<len; i++) sprintf(&out[i*2], "%02X", in[i]);
@@ -46,6 +46,48 @@ static int isWhitespaceChar(char c) {
 			return 1;
 		default:
 			return 0;
+	}
+}
+
+
+// Connect initpeers.
+static void connectInitpeers() {
+	//char text[4096];
+	int i,j,k;
+	char *hostname = NULL;
+	char *port = NULL;
+	unsigned char new_peeraddr[peeraddr_SIZE];
+	i=0;j=0;k=0;
+	for(;;) {
+		j = g_initpeers[i];
+		if((j > 0) && (i+j+1 < INITPEER_STORAGE)) {
+			if(k) {
+				port = &g_initpeers[i+1];
+				printf("[%d] resolving %s:%s...\n",utilGetTime(),hostname,port);
+				if(ioGetUDPAddress(&iostate, new_peeraddr, hostname, port)) {
+					if(p2psecConnect(g_p2psec,new_peeraddr)) {
+						//utilByteArrayToHexstring(text, 4096, new_peeraddr, peeraddr_SIZE);
+						//printf("             connecting to %s...\n", text);
+						printf("             done.\n");
+					}
+					else {
+						printf("             failed: connection could not be created.\n");
+					}
+				}
+				else {
+					printf("             failed: name could not be resolved.\n");
+				}
+				k=0;
+			}
+			else {
+				hostname = &g_initpeers[i+1];
+				k=1;
+			}
+			i=i+j+1;
+		}
+		else {
+			break;
+		}
 	}
 }
 
