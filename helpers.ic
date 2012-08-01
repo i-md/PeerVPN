@@ -49,11 +49,15 @@ static int isWhitespaceChar(char c) {
 	}
 }
 
+struct s_addr_pair {
+  char peername[256];
+  unsigned char addr[peeraddr_SIZE];
+};
 
-// Connect initpeers.
-static void connectInitpeers() {
+// 获得所有init peers的地址
+static int GetInitPeerPairs(struct s_addr_pair* pairs) {
 	//char text[4096];
-	int i,j,k;
+	int i,j,k, pairpos = 0;
 	char *hostname = NULL;
 	char *port = NULL;
 	unsigned char new_peeraddr[peeraddr_SIZE];
@@ -65,14 +69,9 @@ static void connectInitpeers() {
 				port = &g_initpeers[i+1];
 				printf("[%d] resolving %s:%s...\n",utilGetTime(),hostname,port);
 				if(ioGetUDPAddress(&iostate, new_peeraddr, hostname, port)) {
-					if(p2psecConnect(g_p2psec,new_peeraddr)) {
-						//utilByteArrayToHexstring(text, 4096, new_peeraddr, peeraddr_SIZE);
-						//printf("             connecting to %s...\n", text);
-						printf("             done.\n");
-					}
-					else {
-						printf("             failed: connection could not be created.\n");
-					}
+                                  sprintf(pairs[pairpos].peername, "%s:%s", hostname, port);
+                                  memcpy(pairs[pairpos].addr, new_peeraddr, peeraddr_SIZE);
+                                  ++pairpos;
 				}
 				else {
 					printf("             failed: name could not be resolved.\n");
@@ -89,5 +88,6 @@ static void connectInitpeers() {
 			break;
 		}
 	}
+        return pairpos;
 }
 

@@ -168,6 +168,21 @@ static int peermgtGetNodeID(struct s_peermgt *mgt, struct s_nodeid *nodeid, cons
 	}
 }
 
+// 查找对应地址是否在peers中
+static int peermgtFindAddr(struct s_peermgt *mgt, unsigned char* addr) {
+  int i, peerid;
+  int count = mapGetKeyCount(&mgt->map);
+  for (i = 0; i < count; ++i) {
+    peerid = peermgtGetNextID(mgt);
+    if (peerid > 0 && mgt->state[peerid] == peermgt_STATE_COMPLETE) {
+      if (memcmp(mgt->remoteaddr[peerid].addr, addr, peeraddr_SIZE) == 0) {
+        return peerid;
+      }
+    }
+  }
+
+  return -1;
+}
 
 // Reset the data for an ID.
 static void peermgtResetID(struct s_peermgt *mgt, const int peerid) {
