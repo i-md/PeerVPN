@@ -28,10 +28,12 @@ static void mainLoop() {
 	int laststatus = 0;
 	int lastconnectcount = 0;
 	int connectcount = 0;
-	unsigned char lasthash[MD5_DIGEST_LENGTH];
 	int len;
 	int source_peerid;
 	unsigned char new_peeraddr[peeraddr_SIZE];
+        unsigned char lastconnectinfo[4096];
+        unsigned char curconnectinfo[4096];
+
 
 	while(g_mainloop) {
 		tnow = utilGetTime();
@@ -66,56 +68,20 @@ static void mainLoop() {
 
 		// show status
 		if((tnow - laststatus) > 10) {
+                        int i;
+
 			laststatus = tnow;
 			connectcount = mapGetKeyCount(&g_p2psec->mgt.map);
+                        for (i = 0; i < connectcount; ++i) {
+                          memcpy(&curconnectinfo[i * nodeid_SIZE], mapGetKeyByID(&g_p2psec->mgt.map, i), nodeid_SIZE);
+                        }
 
-			int i = 0;
-			int found = 0;
-			char str1[256];
-			char str2[256];
-			MD5_CTX c;
-			unsigned char hash[MD5_DIGEST_LENGTH];
-
-			MD5_Init(&c);
-			for (i = 1, found = 1; (found < connectcount) && (i < g_p2psec->peer_count); i++) {
-				if (peermgtIsActiveID(&g_p2psec->mgt, i)) {
-					u_int8_t *d = mapGetKeyByID(&g_p2psec->mgt.map, i);
-					int len = p2psecGetNodeIDSize();
-					MD5_Update(&c, d, len);
-					found++;
-				}
+			if(lastconnectcount != connectcount || memcmp(curconnectinfo, lastconnectinfo, connectcount * nodeid_SIZE) != 0) {
+				printf("[%d] %d peers connected.\n", tnow, (connectcount - 1));
+                                printActivePeerTable();
+				lastconnectcount = connectcount;
+                                memcpy(lastconnectinfo, curconnectinfo, connectcount * nodeid_SIZE);
 			}
-			MD5_Final(hash, &c);
-
-			if((lastconnectcount != connectcount) || strncmp(lasthash, hash, MD5_DIGEST_LENGTH) != 0) {
-				time_t timestamp = tnow;
-				strftime(str1, 255, "%F %T %z", localtime(&timestamp));
-				printf("[%s] %d peers connected.\n", str1, (connectcount - 1));
-
-				for (i = 0, found = 0; (found < connectcount) && (i < g_p2psec->peer_count); i++) {
-					if (peermgtIsActiveID(&g_p2psec->mgt, i)) {
-						if (i == 0) {
-							printf("me - ");
-						} else {
-							printf("   - ");
-						}
-
-						setSockAddrFromPeerAddr(&g_saddr, g_p2psec->mgt.remoteaddr[i].addr + 6);
-						inet_ntop(AF_INET6,((struct sockaddr_in6 *)(&g_saddr))->sin6_addr.s6_addr, str1, g_saddrlen);
-
-						byteArrayToString(str2, mapGetKeyByID(&g_p2psec->mgt.map, i), p2psecGetNodeIDSize());
-						printf("%25s %s\n", str1, str2);
-
-						found++;
-					}
-				};
-				printf("\n");
-				fflush(stdout);
-
-				memcpy(lasthash, hash, MD5_DIGEST_LENGTH);
-			}
-
-			lastconnectcount = connectcount;
 		}
 
 		// connect initpeers
