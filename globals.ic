@@ -67,3 +67,5 @@ struct s_map g_mactable;
 int g_enableconsole;
 int g_enableeth;
 int g_enableengines;
+unsigned char g_mac_addr[6];
+

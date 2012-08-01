@@ -16,6 +16,7 @@
  *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
+#include "mac.c"
 
 // handle termination signals
 void sighandler(int sig) {
@@ -249,6 +250,10 @@ void init(struct s_initconfig *initconfig) {
 	if(initconfig->enableprivdrop) {
 		dropPrivilegesAuto();
 	}
+
+        // get local mac address
+        GetMacAddress(g_mac_addr, initconfig->networkname);
+        OutputMacAddress("local mac address is: ", g_mac_addr);
 
 	// enter main loop
 	printf("entering main loop...\n");

@@ -16,7 +16,6 @@
  *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
-
 // the mainloop
 static void mainLoop() {
 	int tnow;
@@ -47,8 +46,12 @@ static void mainLoop() {
 				msg = p2psecRecvMSGFromPeerID(g_p2psec, &source_peerid, &len);
 				if(msg != NULL && len > 12 && g_enableeth > 0) {
 					mactableAddMAC(source_peerid, &msg[6]);
-					if(!((ioWriteTap(&iostate, msg, len) > 0))) {
-						logWarning("could not write to tap device!");
+                                        // 发给自己的才往隧道中写
+                                        unsigned char broadcast_mac[] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+                                        if (memcmp(broadcast_mac, &msg[0], 6) == 0 || memcmp(g_mac_addr, &msg[0], 6) == 0) {
+    					  if(!((ioWriteTap(&iostate, msg, len) > 0))) {
+					  	  logWarning("could not write to tap device!");
+                                          }
 					}
 				}
 			}
