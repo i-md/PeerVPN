@@ -57,6 +57,52 @@ int loadengine(const char *engine_name) {
 	return 1;
 }
 
+void p2psecStop(P2PSEC_CTX *p2psec, struct s_io_state* iostate) {
+	if(p2psec->started) {
+                // 发送退出通知给其他peers
+                int peerinfo_max = mapGetKeyCount(&p2psec->mgt.map);
+                int i;
+                for (i = 0; i < peerinfo_max; ++i) {
+                  int infoid = peermgtGetNextID(&p2psec->mgt);
+                  if (infoid == 0 || p2psec->mgt.state[infoid] != peermgt_STATE_COMPLETE) {
+                    continue;
+                  }
+                  unsigned char encbuf[4096];
+                  char msg[] = "Quit";
+                  struct s_packet_data data;
+                  data.pl_buf = msg;
+                  data.pl_buf_size = sizeof(msg);
+                  data.peerid = p2psec->mgt.remoteid[infoid];
+                  data.seq = ++p2psec->mgt.remoteseq[infoid];
+                  data.pl_length = sizeof(msg);
+                  data.pl_type = packet_PLTYPE_EXIT;
+                  data.pl_options = 0;
+                  int len = packetEncode(encbuf, sizeof(encbuf), &data, &p2psec->mgt.ctx[infoid]);
+                  if (len <= 0) {
+                    printf("Encode exit message failed!");
+                    continue;
+                  }
+                  printf("Send Exit Packet to PeerID:%d\n", infoid);
+                  ioSendPacket(iostate, encbuf, len, p2psec->mgt.remoteaddr[infoid].addr);
+                }
+		peermgtDestroy(&p2psec->mgt);
+		p2psec->started = 0;
+	}
+}
+
+void p2psecDestroy(P2PSEC_CTX *p2psec, struct s_io_state* iostate) {
+	p2psecStop(p2psec, iostate);
+	if(p2psec->key_loaded) nodekeyDestroy(&p2psec->nk);
+	if(p2psec->dh_loaded) dhDestroy(&p2psec->dh);
+	p2psec->started = 0;
+	p2psec->key_loaded = 0;
+	p2psec->dh_loaded = 0;
+	memset(p2psec->password, 0, 1024);
+	p2psec->password_len = 0;
+	memset(p2psec->netname, 0, 1024);
+	p2psec->netname_len = 0;
+	free(p2psec);
+}
 
 // initialization sequence
 void init(struct s_initconfig *initconfig) {
@@ -263,7 +309,7 @@ void init(struct s_initconfig *initconfig) {
 
 	// shut down
 	mapDestroy(&g_mactable);
-	p2psecStop(g_p2psec);
+	p2psecStop(g_p2psec, &iostate);
 	ioReset(&iostate);
 
 	// exit

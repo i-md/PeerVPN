@@ -554,6 +554,19 @@ static int peermgtDecodePacketPeerinfo(struct s_peermgt *mgt, const struct s_pac
 }
 
 
+// Decode exit packet
+static int peermgtDecodePacketExit(struct s_peermgt* mgt, const struct s_packet_data* data) {
+  char quitmsg[] = "Quit";
+  if (data->pl_length == sizeof(quitmsg) && memcmp(data->pl_buf, quitmsg, sizeof(quitmsg)) == 0) {
+    printf("Delete peerid %d!\n", data->peerid);
+    peermgtDeleteID(mgt, data->peerid);
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+
 // Decode fragmented packet
 static int peermgtDecodeUserdataFragment(struct s_peermgt *mgt, struct s_packet_data *data) {
 	int fragcount = (data->pl_options >> 4);
@@ -621,6 +634,9 @@ static int peermgtDecodePacket(struct s_peermgt *mgt, const unsigned char *packe
 						case packet_PLTYPE_PEERINFO:
 							ret = peermgtDecodePacketPeerinfo(mgt, &data);
 							break;
+                                                case packet_PLTYPE_EXIT:
+                                                        printf("recv packet_PLTYPE_EXIT\n");
+                                                        ret = peermgtDecodePacketExit(mgt, &data);
 						default:
 							ret = 0;
 							break;

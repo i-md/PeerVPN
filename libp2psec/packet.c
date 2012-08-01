@@ -49,6 +49,7 @@
 #define packet_PLTYPE_USERDATA_FRAGMENT 1
 #define packet_PLTYPE_AUTH 2
 #define packet_PLTYPE_PEERINFO 3
+#define packet_PLTYPE_EXIT 4
 
 
 // constraints

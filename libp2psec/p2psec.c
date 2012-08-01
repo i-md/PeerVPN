@@ -62,14 +62,6 @@ int p2psecStart(P2PSEC_CTX *p2psec) {
 }
 
 
-void p2psecStop(P2PSEC_CTX *p2psec) {
-	if(p2psec->started) {
-		peermgtDestroy(&p2psec->mgt);
-		p2psec->started = 0;
-	}
-}
-
-
 int p2psecGetAddrSize() {
 	return peeraddr_SIZE;
 }
@@ -259,21 +251,6 @@ P2PSEC_CTX *p2psecCreate() {
 		return p2psec;
 	}
 	return NULL;
-}
-
-
-void p2psecDestroy(P2PSEC_CTX *p2psec) {
-	p2psecStop(p2psec);
-	if(p2psec->key_loaded) nodekeyDestroy(&p2psec->nk);
-	if(p2psec->dh_loaded) dhDestroy(&p2psec->dh);
-	p2psec->started = 0;
-	p2psec->key_loaded = 0;
-	p2psec->dh_loaded = 0;
-	memset(p2psec->password, 0, 1024);
-	p2psec->password_len = 0;
-	memset(p2psec->netname, 0, 1024);
-	p2psec->netname_len = 0;
-	free(p2psec);
 }
 
 
