@@ -102,15 +102,12 @@ static void mainLoop() {
                      }
                    }
 
-                   // 未连接的机器超过1/4时，重新连接这部分机器
-                   if (peer_count > 0 && peer_count <= 4 * unconnect_count) {
-                     printf("peer_count = %d, unconnect_count = %d\n", peer_count, unconnect_count);
-                     for (i = 0; i < unconnect_count; ++i) {
-                       if (p2psecConnect(g_p2psec, unconnect_addrs[i].addr)) {
-                         printf("connect %s done!\n", unconnect_addrs[i].peername);
-                       } else {
-                         printf("%s failed: connection could not be created.\n", unconnect_addrs[i].peername);
-                       }
+                   printf("peer_count = %d, unconnect_count = %d\n", peer_count, unconnect_count);
+                   for (i = 0; i < unconnect_count; ++i) {
+                     if (p2psecConnect(g_p2psec, unconnect_addrs[i].addr)) {
+                       printf("connect %s done!\n", unconnect_addrs[i].peername);
+                     } else {
+                       printf("%s failed: connection could not be created.\n", unconnect_addrs[i].peername);
                      }
                    }
                    lastinit = tnow;
